@@ -1463,6 +1463,23 @@ pub fn build(b: *std.Build) void {
         sdl_mod.linkSystemLibrary("GLESv1_CM", .{});
         sdl_mod.linkSystemLibrary("GLESv2", .{});
         sdl_mod.linkSystemLibrary("OpenSLES", .{});
+
+        const java_dir = b.path("android-project/app/src/main/java/org/libsdl/app");
+        const java = b.addNamedWriteFiles("java");
+        for ([_][]const u8{
+            "HIDDevice.java",
+            "HIDDeviceBLESteamController.java",
+            "HIDDeviceManager.java",
+            "HIDDeviceUSB.java",
+            "SDL.java",
+            "SDLActivity.java",
+            "SDLAudioManager.java",
+            "SDLControllerManager.java",
+            "SDLDummyEdit.java",
+            "SDLInputConnection.java",
+            "SDLSensorManager.java",
+            "SDLSurface.java",
+        }) |basename| _ = java.addCopyFile(java_dir.path(b, basename), basename);
     }
 
     if (sdl_lib.linkage.? == .dynamic) {
