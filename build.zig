@@ -79,6 +79,7 @@ pub fn build(b: *std.Build) void {
     var linux_deps_values: ?LinuxDepsValues = null;
     var macos = false;
     var emscripten = false;
+    var android = false;
     var msvc = false; // Assume mingw-w64 as the default for Windows
     var musl = false; // Assume glibc as the default for Linux
     switch (target.result.os.tag) {
@@ -86,7 +87,9 @@ pub fn build(b: *std.Build) void {
             windows = true;
             msvc = target.result.abi == .msvc;
         },
-        .linux => {
+        .linux => if (target.result.abi.isAndroid()) {
+            android = true;
+        } else {
             linux = true;
             if (b.lazyImport(@This(), "sdl_linux_deps")) |build_zig| {
                 linux_deps_values = LinuxDepsValues.fromBuildZig(b, build_zig);
@@ -636,7 +639,7 @@ pub fn build(b: *std.Build) void {
         .pic = pic,
     });
     const sdl_lib = b.addLibrary(.{
-        .linkage = if (emscripten) .static else preferred_linkage,
+        .linkage = if (emscripten) .static else if (android) .dynamic else preferred_linkage,
         .name = "SDL3",
         .root_module = sdl_mod,
         .version = .{
@@ -648,7 +651,7 @@ pub fn build(b: *std.Build) void {
     });
     sdl_lib.lto = lto;
 
-    sdl_mod.addCMacro("USING_GENERATED_CONFIG_H", "1");
+    if (!android) sdl_mod.addCMacro("USING_GENERATED_CONFIG_H", "1");
     sdl_mod.addCMacro("SDL_BUILD_MAJOR_VERSION", std.fmt.comptimePrint("{d}", .{version.major}));
     sdl_mod.addCMacro("SDL_BUILD_MINOR_VERSION", std.fmt.comptimePrint("{d}", .{version.minor}));
     sdl_mod.addCMacro("SDL_BUILD_MICRO_VERSION", std.fmt.comptimePrint("{d}", .{version.patch}));
@@ -670,7 +673,10 @@ pub fn build(b: *std.Build) void {
         sdl_mod.addCMacro("_REENTRANT", "1");
     }
 
-    sdl_mod.addConfigHeader(build_config_h);
+    if (android)
+        sdl_mod.addIncludePath(b.path("include/build_config"))
+    else
+        sdl_mod.addConfigHeader(build_config_h);
     sdl_mod.addConfigHeader(revision_h);
     sdl_mod.addIncludePath(b.path("include"));
     sdl_mod.addIncludePath(b.path("src"));
@@ -708,7 +714,7 @@ pub fn build(b: *std.Build) void {
     if (sdl_lib.linkage.? == .dynamic) {
         sdl_c_flags.appendAssumeCapacity("-fvisibility=hidden");
     }
-    if (linux) {
+    if (linux or android) {
         sdl_c_flags.appendAssumeCapacity("-pthread");
     }
     if (macos) {
@@ -915,9 +921,12 @@ pub fn build(b: *std.Build) void {
             });
             sdl_uclibc_lib.lto = lto;
 
-            sdl_uclibc_mod.addCMacro("USING_GENERATED_CONFIG_H", "1");
+            if (!android) sdl_uclibc_mod.addCMacro("USING_GENERATED_CONFIG_H", "1");
 
-            sdl_uclibc_mod.addConfigHeader(build_config_h);
+            if (android)
+                sdl_uclibc_mod.addIncludePath(b.path("include/build_config"))
+            else
+                sdl_uclibc_mod.addConfigHeader(build_config_h);
             sdl_uclibc_mod.addConfigHeader(revision_h);
             sdl_uclibc_mod.addIncludePath(b.path("include"));
             sdl_uclibc_mod.addIncludePath(b.path("src"));
@@ -1364,6 +1373,96 @@ pub fn build(b: *std.Build) void {
                 },
             });
         }
+    }
+
+    if (android) {
+        sdl_mod.addCSourceFiles(.{
+            .flags = sdl_c_flags.items,
+            .files = &.{
+                "src/core/android/SDL_android.c",
+                "src/misc/android/SDL_sysurl.c",
+                "src/audio/aaudio/SDL_aaudio.c",
+                "src/audio/openslES/SDL_openslES.c",
+                "src/camera/android/SDL_camera_android.c",
+                "src/dialog/android/SDL_androiddialog.c",
+                "src/filesystem/android/SDL_sysfilesystem.c",
+                "src/filesystem/posix/SDL_sysfsops.c",
+                "src/gpu/vulkan/SDL_gpu_vulkan.c",
+                "src/haptic/android/SDL_syshaptic.c",
+                "src/haptic/hidapi/SDL_hidapihaptic.c",
+                "src/haptic/hidapi/SDL_hidapihaptic_lg4ff.c",
+                "src/joystick/hidapi/SDL_hidapi_8bitdo.c",
+                "src/joystick/hidapi/SDL_hidapi_combined.c",
+                "src/joystick/hidapi/SDL_hidapi_flydigi.c",
+                "src/joystick/hidapi/SDL_hidapi_gamecube.c",
+                "src/joystick/hidapi/SDL_hidapi_gip.c",
+                "src/joystick/hidapi/SDL_hidapijoystick.c",
+                "src/joystick/hidapi/SDL_hidapi_lg4ff.c",
+                "src/joystick/hidapi/SDL_hidapi_luna.c",
+                "src/joystick/hidapi/SDL_hidapi_ps3.c",
+                "src/joystick/hidapi/SDL_hidapi_ps4.c",
+                "src/joystick/hidapi/SDL_hidapi_ps5.c",
+                "src/joystick/hidapi/SDL_hidapi_rumble.c",
+                "src/joystick/hidapi/SDL_hidapi_shield.c",
+                "src/joystick/hidapi/SDL_hidapi_sinput.c",
+                "src/joystick/hidapi/SDL_hidapi_stadia.c",
+                "src/joystick/hidapi/SDL_hidapi_steam.c",
+                "src/joystick/hidapi/SDL_hidapi_steamdeck.c",
+                "src/joystick/hidapi/SDL_hidapi_steam_hori.c",
+                "src/joystick/hidapi/SDL_hidapi_steam_triton.c",
+                "src/joystick/hidapi/SDL_hidapi_switch2.c",
+                "src/joystick/hidapi/SDL_hidapi_switch.c",
+                "src/joystick/hidapi/SDL_hidapi_wii.c",
+                "src/joystick/hidapi/SDL_hidapi_xbox360.c",
+                "src/joystick/hidapi/SDL_hidapi_xbox360w.c",
+                "src/joystick/hidapi/SDL_hidapi_xboxone.c",
+                "src/joystick/hidapi/SDL_hidapi_zuiki.c",
+                "src/joystick/hidapi/SDL_report_descriptor.c",
+                "src/joystick/android/SDL_sysjoystick.c",
+                "src/joystick/virtual/SDL_virtualjoystick.c",
+                "src/loadso/dlopen/SDL_sysloadso.c",
+                "src/locale/android/SDL_syslocale.c",
+                "src/main/generic/SDL_sysmain_callbacks.c",
+                "src/power/android/SDL_syspower.c",
+                "src/process/dummy/SDL_dummyprocess.c",
+                "src/sensor/android/SDL_androidsensor.c",
+                "src/storage/generic/SDL_genericstorage.c",
+                "src/thread/pthread/SDL_syscond.c",
+                "src/thread/pthread/SDL_sysmutex.c",
+                "src/thread/pthread/SDL_sysrwlock.c",
+                "src/thread/pthread/SDL_syssem.c",
+                "src/thread/pthread/SDL_systhread.c",
+                "src/thread/pthread/SDL_systls.c",
+                "src/time/unix/SDL_systime.c",
+                "src/timer/unix/SDL_systimer.c",
+                "src/tray/dummy/SDL_tray.c",
+                "src/video/android/SDL_androidclipboard.c",
+                "src/video/android/SDL_androidevents.c",
+                "src/video/android/SDL_androidgl.c",
+                "src/video/android/SDL_androidkeyboard.c",
+                "src/video/android/SDL_androidmessagebox.c",
+                "src/video/android/SDL_androidmouse.c",
+                "src/video/android/SDL_androidpen.c",
+                "src/video/android/SDL_androidtouch.c",
+                "src/video/android/SDL_androidvideo.c",
+                "src/video/android/SDL_androidvulkan.c",
+                "src/video/android/SDL_androidwindow.c",
+            },
+        });
+
+        sdl_mod.addCSourceFiles(.{
+            .flags = &(common_c_flags ++ .{"-std=c++11"}),
+            .files = &.{"src/hidapi/android/hid.cpp"},
+        });
+        sdl_mod.link_libcpp = true;
+        sdl_mod.addCMacro("GL_GLEXT_PROTOTYPES", "1");
+
+        sdl_mod.linkSystemLibrary("dl", .{});
+        sdl_mod.linkSystemLibrary("log", .{});
+        sdl_mod.linkSystemLibrary("android", .{});
+        sdl_mod.linkSystemLibrary("GLESv1_CM", .{});
+        sdl_mod.linkSystemLibrary("GLESv2", .{});
+        sdl_mod.linkSystemLibrary("OpenSLES", .{});
     }
 
     if (sdl_lib.linkage.? == .dynamic) {
